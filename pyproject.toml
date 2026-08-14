@@ -20,7 +20,7 @@ dh-example = "dh_example.plugin:create_plugin"
 [dependency-groups]
 dev = [
   "mypy>=1.17,<2",
-  "pytest>=8.4,<9",
+  "pytest>=8.4,<10",
   "ruff>=0.12,<1",
 ]
 
