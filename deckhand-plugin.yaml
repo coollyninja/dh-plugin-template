@@ -1,13 +1,15 @@
 schema_version: 1
 id: dh-example
 name: Example
-version: 0.1.0
+version: 0.2.0
 api_version: 1
-description: Reference read-only status provider for Deckhand plugin authors.
-adapters: []
+description: Reference read-only adapter and status provider for Deckhand plugin authors.
+adapters:
+  - dh-example.read
 status_provider_types:
   - static-example
-actions: []
+actions:
+  - example.domain.observe
 permissions:
   mutation: false
   credential_slots: []
