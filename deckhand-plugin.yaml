@@ -1,0 +1,41 @@
+schema_version: 1
+id: dh-example
+name: Example
+version: 0.1.0
+api_version: 1
+description: Reference read-only status provider for Deckhand plugin authors.
+adapters: []
+status_provider_types:
+  - static-example
+actions: []
+permissions:
+  mutation: false
+  credential_slots: []
+  egress_bindings: []
+config_schema:
+  $schema: https://json-schema.org/draft/2020-12/schema
+  type: object
+  additionalProperties: false
+  required:
+    - domains
+  properties:
+    domains:
+      type: object
+      propertyNames:
+        pattern: ^[a-z][a-z0-9_]{0,63}$
+      additionalProperties:
+        type: object
+        additionalProperties: false
+        required:
+          - state
+        properties:
+          state:
+            type: string
+            minLength: 1
+            maxLength: 64
+          stale_after_seconds:
+            type: integer
+            minimum: 1
+            maximum: 3600
+          details:
+            type: object
