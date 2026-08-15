@@ -1,8 +1,29 @@
+from __future__ import annotations
+
 import re
 from collections.abc import Mapping
 from typing import Any
 
-from deckhand.models import StatusValue, StrictModel
+from deckhand.adapters import (
+    AdapterCancellation,
+    AdapterError,
+    AdapterErrorKind,
+    AdapterExecution,
+    AdapterHealth,
+    AdapterHealthState,
+    AdapterObservation,
+    AdapterPlan,
+    AdapterVerification,
+    CancellationDisposition,
+)
+from deckhand.models import (
+    ActionDefinition,
+    ActionRequest,
+    ConfirmationMode,
+    RiskClass,
+    StatusValue,
+    StrictModel,
+)
 from deckhand.plugin_api import (
     DeckhandPlugin,
     PluginContext,
@@ -60,15 +81,96 @@ CONFIG_SCHEMA: dict[str, Any] = {
 }
 
 
+OBSERVE_ACTION = ActionDefinition(
+    id="example.domain.observe",
+    version=1,
+    title="Observe example domain",
+    description="Read the configured state for a logical example domain.",
+    risk_class=RiskClass.READ,
+    plugin="dh-example",
+    adapter="dh-example.read",
+    target_types=["example_domain"],
+    parameter_schema={
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {},
+    },
+    policy_action="example.domain.observe",
+    confirmation=ConfirmationMode.NONE,
+    timeout_seconds=10,
+    idempotency="read-only",
+    mutation=False,
+)
+
+
+class ExampleReadAdapter:
+    """Complete, deterministic reference implementation of Deckhand's adapter contract."""
+
+    def __init__(self, domains: Mapping[str, ExampleDomain]) -> None:
+        self.domains = dict(domains)
+
+    def _domain(self, request: ActionRequest) -> ExampleDomain:
+        try:
+            return self.domains[request.target.id]
+        except KeyError as error:
+            raise AdapterError(
+                "example domain is not configured",
+                kind=AdapterErrorKind.NOT_FOUND,
+            ) from error
+
+    async def health(self) -> AdapterHealth:
+        return AdapterHealth(
+            state=AdapterHealthState.HEALTHY,
+            details={"configured_domain_count": len(self.domains)},
+        )
+
+    async def plan(self, action: ActionDefinition, request: ActionRequest) -> AdapterPlan:
+        self._domain(request)
+        return AdapterPlan(steps=["resolve logical domain", "observe state", "verify observation"])
+
+    async def execute(self, action: ActionDefinition, request: ActionRequest) -> AdapterExecution:
+        self._domain(request)
+        return AdapterExecution(reference=f"observe:{request.target.id}")
+
+    async def observe(self, action: ActionDefinition, request: ActionRequest) -> AdapterObservation:
+        domain = self._domain(request)
+        return AdapterObservation(state=domain.state, details=domain.details)
+
+    async def verify(
+        self,
+        action: ActionDefinition,
+        request: ActionRequest,
+        execution: AdapterExecution,
+        observation: AdapterObservation,
+    ) -> AdapterVerification:
+        return AdapterVerification(
+            satisfied=observation.state != "unknown",
+            details={"execution_reference": execution.reference},
+        )
+
+    async def cancel(
+        self,
+        action: ActionDefinition,
+        request: ActionRequest,
+        execution: AdapterExecution | None,
+    ) -> AdapterCancellation:
+        return AdapterCancellation(disposition=CancellationDisposition.ALREADY_TERMINAL)
+
+
 class ExamplePlugin:
     @property
     def manifest(self) -> PluginManifest:
         return PluginManifest(
             id="dh-example",
             name="Example",
-            version="0.1.0",
-            description="Reference read-only status provider for Deckhand plugin authors.",
+            version="0.2.0",
+            description=(
+                "Reference read-only adapter and status provider for Deckhand plugin authors."
+            ),
+            adapters=["dh-example.read"],
             status_provider_types=["static-example"],
+            actions=[OBSERVE_ACTION.id],
             permissions=PluginPermissions(mutation=False),
             config_schema=CONFIG_SCHEMA,
         )
@@ -85,7 +187,11 @@ class ExamplePlugin:
             )
             for name, domain in config.domains.items()
         }
-        return PluginContribution(status_providers=providers)
+        return PluginContribution(
+            adapters={"dh-example.read": ExampleReadAdapter(config.domains)},
+            status_providers=providers,
+            actions=(OBSERVE_ACTION,),
+        )
 
 
 def create_plugin() -> DeckhandPlugin:
